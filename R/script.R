@@ -1,4 +1,4 @@
-library(dplyr)
+startlibrary(dplyr)
 library(reshape2)
 library(ggplot2)
 library(ggthemes)
@@ -36,7 +36,7 @@ df_res1$total_conversions <- df_res1$total_conversions/sum(df_res1$total_convers
 
 # extracting a transition matrix
 df_trans1 <- mod1$transition_matrix
-df_trans1 <- dcast(df_trans1, channel_from ~ channel_to, 
+df_trans1 <- dcast(df_trans1, channel_from ~ channel_to,
                    value.var = 'transition_probability')
 
 ### plotting the Markov graph ###
@@ -50,7 +50,7 @@ df_trans <- rbind(df_trans, df_dummy)
 
 # ordering channels
 df_trans$channel_from <- factor(df_trans$channel_from,
-                                levels = c('(start)', '(conversion)', '(null)', 
+                                levels = c('(start)', '(conversion)', '(null)',
                                            unique(unlist(strsplit(x = df1$path, split = " > "))))
                                 )
 df_trans$channel_to <- factor(df_trans$channel_to,
