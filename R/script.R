@@ -1,70 +1,59 @@
-startlibrary(dplyr)
-library(reshape2)
-library(ggplot2)
-library(ggthemes)
-library(ggrepel)
-library(RColorBrewer)
-library(ChannelAttribution)
-library(markovchain)
-library(dplyr)
-library(stringr)
+#' @title Predicts Stock Price Movement for Given Stock Symbol
+#'
+#' @description This package predicts whether the stock price at tommorow's market close would be higher or lower compared to today's closing place.
+#'
+#' @param symbol
+#'
+#' @return NULL
+#'
+#' @examples  stock_predict('AAPL')
+#'
+#' @export stock_predict
+stock_predict<-function(symbol)
+{
 
-##### simple example #####
-# creating a data sample
-# df1 <- data.frame(path = c('c1 > c2 > c3', 'c1', 'c2 > c3'),
-#                   conv = c(2, 0,1),
-#                   conv_null = c(0, 1, 0))
+  #To ignore the warnings during usage
+  options(warn=-1)
+  options("getSymbols.warning4.0"=FALSE)
+  #Importing price data for the given symbol
+  data<-data.frame(xts::as.xts(get(quantmod::getSymbols(symbol))))
 
-df1 <- read.csv("inputFile.csv", stringsAsFactors = FALSE, header = TRUE)
-df1 <- aggregate(x = df1[2:3], by = list(df1$path), FUN = sum)
-names(df1) <- c("path", "conv", "conv_null")
-df1$path <- gsub(" > ",">",df1$path)
-df1$path <- gsub(" ","_",df1$path)
-df1$path <- gsub(">"," > ",df1$path)
+  #Assighning the column names
+  colnames(data) <- c("data.Open","data.High","data.Low","data.Close","data.Volume","data.Adjusted")
 
+  #Creating lag and lead features of price column.
+  data <- xts::xts(data,order.by=as.Date(rownames(data)))
+  data <- as.data.frame(merge(data, lm1=stats::lag(data[,'data.Adjusted'],c(-1,1,3,5,10))))
 
-# calculating the model
-mod1 <- markov_model(df1,
-                     var_path = 'path',
-                     var_conv = 'conv',
-                     var_null = 'conv_null',
-                     out_more = TRUE)
+  #Extracting features from Date
+  data$Date<-as.Date(rownames(data))
+  data$Day_of_month<-as.integer(format(as.Date(data$Date),"%d"))
+  data$Month_of_year<-as.integer(format(as.Date(data$Date),"%m"))
+  data$Year<-as.integer(format(as.Date(data$Date),"%y"))
+  data$Day_of_week<-as.factor(weekdays(data$Date))
 
-# extracting the results of attribution
-df_res1 <- mod1$result
-df_res1$total_conversions <- df_res1$total_conversions/sum(df_res1$total_conversions)
+  #Naming variables for reference
+  today <- 'data.Adjusted'
+  tommorow <- 'data.Adjusted.5'
 
-# extracting a transition matrix
-df_trans1 <- mod1$transition_matrix
-df_trans1 <- dcast(df_trans1, channel_from ~ channel_to,
-                   value.var = 'transition_probability')
+  #Creating outcome
+  data$up_down <- as.factor(ifelse(data[,tommorow] > data[,today], 1, 0))
 
-### plotting the Markov graph ###
-df_trans <- mod1$transition_matrix
+  #Creating train and test sets
+  train<-data[stats::complete.cases(data),]
+  test<-data[nrow(data),]
 
-# adding dummies in order to plot the graph
-df_dummy <- data.frame(channel_from = c('(start)', '(conversion)', '(null)'),
-                       channel_to = c('(start)', '(conversion)', '(null)'),
-                       transition_probability = c(0, 1, 1))
-df_trans <- rbind(df_trans, df_dummy)
+  #Training model
+  model<-stats::glm(up_down~data.Open+data.High+data.Low+data.Close+
+                      data.Volume+data.Adjusted+data.Adjusted.1+
+                      data.Adjusted.2+data.Adjusted.3+data.Adjusted.4+
+                      Day_of_month+Month_of_year+Year+Day_of_week,
+                    family=binomial(link='logit'),data=train)
 
-# ordering channels
-df_trans$channel_from <- factor(df_trans$channel_from,
-                                levels = c('(start)', '(conversion)', '(null)',
-                                           unique(unlist(strsplit(x = df1$path, split = " > "))))
-                                )
-df_trans$channel_to <- factor(df_trans$channel_to,
-                              levels = c('(start)', '(conversion)', '(null)',
-                                         unique(unlist(strsplit(x = df1$path, split = " > "))))
-                                         )
-df_trans <- dcast(df_trans, channel_from ~ channel_to, value.var = 'transition_probability')
+  #Making Predictions
+  pred<-as.numeric(stats::predict(model,test[,c('data.Open','data.High','data.Low','data.Close','data.Volume','data.Adjusted','data.Adjusted.1','data.Adjusted.2','data.Adjusted.3','data.Adjusted.4','Day_of_month','Month_of_year','Year','Day_of_week')],type = 'response'))
 
-# creating the markovchain object
-trans_matrix <- matrix(data = as.matrix(df_trans[, -1]),
-                       nrow = nrow(df_trans[, -1]), ncol = ncol(df_trans[, -1]),
-                       dimnames = list(c(as.character(df_trans[, 1])), c(colnames(df_trans[, -1]))))
-trans_matrix[is.na(trans_matrix)] <- 0
-trans_matrix1 <- new("markovchain", transitionMatrix = trans_matrix)
-
-# plotting the graph
-plot(trans_matrix1, edge.arrow.size = 0.35)
+  #Printing results
+  print("Probability of Stock price going up tommorow:")
+  print(pred)
+}
